@@ -117,6 +117,13 @@ public class Webhook extends AbstractTrigger implements TriggerOutput<Webhook.Ou
     @PluginProperty
     @Builder.Default
     private Boolean wait = false;
+    
+    
+    @Schema(
+        title = "The inputs to pass to the triggered flow"
+    )
+    @PluginProperty(dynamic = true)
+    private Map<String, Object> inputs;
 
     public Optional<Execution> evaluate(HttpRequest<String> request, io.kestra.core.models.flows.Flow flow) {
         String body = request.getBody().orElse(null);
@@ -127,6 +134,7 @@ public class Webhook extends AbstractTrigger implements TriggerOutput<Webhook.Ou
             .namespace(flow.getNamespace())
             .flowId(flow.getId())
             .flowRevision(flow.getRevision())
+            .inputs(inputs)
             .state(new State())
             .trigger(ExecutionTrigger.of(
                 this,
