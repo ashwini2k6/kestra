@@ -34,7 +34,10 @@ public class TriggerContext {
 
     @NotNull
     private String triggerId;
-
+    
+    /**
+     * The timestamp when this trigger was last executed.
+     */
     @NotNull
     private ZonedDateTime date;
 
@@ -46,6 +49,9 @@ public class TriggerContext {
 
     @Nullable
     private List<State.Type> stopAfter;
+    
+    @Nullable
+    private Integer vnode;
 
     @Schema(defaultValue = "false")
     private Boolean disabled = Boolean.FALSE;
@@ -60,6 +66,7 @@ public class TriggerContext {
         this.backfill = b.backfill;
         this.stopAfter = b.stopAfter;
         this.disabled = b.disabled;
+        this.vnode = b.vnode;
     }
 
     public static TriggerContextBuilder<?, ?> builder() {

@@ -481,6 +481,26 @@ public abstract class AbstractJdbcTriggerRepository extends AbstractJdbcReposito
             }
         });
     }
+    
+    @Override
+    public List<Trigger> findByNextExecutionDateReadyForAllTenants(ZonedDateTime now, Set<Integer> vNodes) {
+        return this.jdbcRepository
+            .getDslContextWrapper()
+            .transactionResult(configuration -> {
+                return DSL.using(configuration).select(field("value"))
+                    .from(this.jdbcRepository.getTable())
+                    .where(
+                        (field("next_execution_date").lessThan(now.toOffsetDateTime())
+                            // we check for null for backwards compatibility
+                            .or(field("next_execution_date").isNull()))
+                            .and(field("execution_id").isNull())
+                            .and(field("vnode").in(vNodes))
+                    )
+                    .orderBy(field("next_execution_date").asc())
+                    .fetch()
+                    .map(r -> this.jdbcRepository.deserialize(r.get("value", String.class)));
+            });
+    }
 
 
     abstract protected Field<Date> formatDateField(String dateField, DateUtils.GroupType groupType);

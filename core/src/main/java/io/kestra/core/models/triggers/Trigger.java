@@ -36,7 +36,7 @@ public class Trigger extends TriggerContext implements HasUID {
     @Nullable
     @Setter // it's unfortunate but neither toBuilder() not @With works so using @Setter here
     private String workerId;
-
+    
     protected Trigger(TriggerBuilder<?, ?> b) {
         super(b);
         this.executionId = b.executionId;
