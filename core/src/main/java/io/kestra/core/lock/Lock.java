@@ -16,7 +16,7 @@ public class Lock {
     private String category;
     private String id;
     private String owner;
-    private LocalDateTime expiry;
+    private LocalDateTime date;
 
     public String uid() {
         return IdUtils.fromParts(this.category, this.id);

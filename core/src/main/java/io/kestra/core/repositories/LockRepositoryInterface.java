@@ -9,7 +9,11 @@ public interface LockRepositoryInterface {
 
     boolean create(Lock newLock);
 
-    void delete(Lock existing);
+    default void delete(Lock existing) {
+        deleteById(existing.getCategory(), existing.getId());
+    }
 
     void deleteById(String category, String id);
+
+    int deleteByOwner(String owner);
 }

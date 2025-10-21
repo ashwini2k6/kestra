@@ -62,4 +62,17 @@ public abstract class AbstractLockRepositoryTest {
         var existing = lockRepository.findById("test", "deleteById");
         assertThat(existing).isEmpty();
     }
+
+    @Test
+    void deleteByOwner() {
+        var lock = Lock.builder().category("test").id("deleteByOwner").owner("me").build();
+        boolean created = lockRepository.create(lock);
+        assertThat(created).isTrue();
+
+        int deleted = lockRepository.deleteByOwner("me");
+        assertThat(deleted).isEqualTo(1);
+
+        var existing = lockRepository.findById("test", "deleteByOwner");
+        assertThat(existing).isEmpty();
+    }
 }

@@ -14,6 +14,12 @@ import java.util.concurrent.Callable;
 /**
  * This service provides facility for executing Runnable and Callable tasks inside a lock.
  * Note: it may be handy to provide a tryLock facility that, if locked, skip executing the Runnable or Callable and exit immediately.
+ *
+ * @implNote There are no expiry for locks so a service may hold a lock infinitely until the service is restarted as the
+ *           liveness mechanism release all locks when the service is unreachable.
+ *           This may be improved at some point by adding an expiry (for ex 30s) and running a thread that will periodically
+ *           increase the expiry for all exiting locks. This should allow quicker recovery of zombie locks than relying on the liveness mechanism,
+ *           as a service wanted to lock an expired lock would be able to take it over.
  */
 @Slf4j
 @Singleton
@@ -31,32 +37,30 @@ public class LockService {
     /**
      * Executes a Runnable inside a lock.
      * If the lock is already taken, it will wait for at most the default lock timeout of 5mn.
-     * @see #doInLock(String, String, Duration, Duration, Runnable)
+     * @see #doInLock(String, String, Duration, Runnable)
      *
      * @param category lock category, ex 'executions'
      * @param id identifier of the lock identity inside the category, ex an execution ID
-     * @param expiry how much time the lock should be hold before it is considered expired
      *
      * @throws LockException if the lock cannot be hold before the timeout or the thread is interrupted.
      */
-    public void doInLock(String category, String id, Duration expiry, Runnable runnable) throws LockException {
-        doInLock(category, id, DEFAULT_TIMEOUT, expiry, runnable);
+    public void doInLock(String category, String id, Runnable runnable) throws LockException {
+        doInLock(category, id, DEFAULT_TIMEOUT, runnable);
     }
 
     /**
      * Executes a Runnable inside a lock.
      * If the lock is already taken, it will wait for at most the <code>timeout</code> duration.
-     * @see #doInLock(String, String, Duration, Runnable)
+     * @see #doInLock(String, String, Runnable)
      *
      * @param category lock category, ex 'executions'
      * @param id identifier of the lock identity inside the category, ex an execution ID
      * @param timeout how much time to wait for the lock if another process already hold the same lock
-     * @param expiry how much time the lock should be hold before it is considered expired
      *
      * @throws LockException if the lock cannot be hold before the timeout or the thread is interrupted.
      */
-    public void doInLock(String category, String id, Duration timeout, Duration expiry, Runnable runnable) throws LockException {
-        if (!lock(category, id, timeout, expiry)) {
+    public void doInLock(String category, String id, Duration timeout, Runnable runnable) throws LockException {
+        if (!lock(category, id, timeout)) {
             throw new LockException("Unable to hold the lock inside the configured timeout of " + timeout);
         }
 
@@ -73,12 +77,11 @@ public class LockService {
      *
      * @param category lock category, ex 'executions'
      * @param id identifier of the lock identity inside the category, ex an execution ID
-     * @param expiry how much time the lock should be hold before it is considered expired
      *
      * @throws LockException if the lock cannot be hold before the timeout or the thread is interrupted.
      */
-    public <T> T callInLock(String category, String id, Duration expiry, Callable<T> callable) throws Exception {
-        return callInLock(category, id, DEFAULT_TIMEOUT, expiry, callable);
+    public <T> T callInLock(String category, String id, Callable<T> callable) throws Exception {
+        return callInLock(category, id, DEFAULT_TIMEOUT, callable);
     }
 
     /**
@@ -88,12 +91,11 @@ public class LockService {
      * @param category lock category, ex 'executions'
      * @param id identifier of the lock identity inside the category, ex an execution ID
      * @param timeout how much time to wait for the lock if another process already hold the same lock
-     * @param expiry how much time the lock should be hold before it is considered expired
      *
      * @throws LockException if the lock cannot be hold before the timeout or the thread is interrupted.
      */
-    public <T> T callInLock(String category, String id, Duration timeout, Duration expiry, Callable<T> callable) throws Exception {
-        if (!lock(category, id, timeout, expiry)) {
+    public <T> T callInLock(String category, String id, Duration timeout, Callable<T> callable) throws Exception {
+        if (!lock(category, id, timeout)) {
             throw new LockException("Unable to hold the lock inside the configured timeout of " + timeout);
         }
 
@@ -104,28 +106,20 @@ public class LockService {
         }
     }
 
-    // TODO should we really expire locks?
+    public int releaseAllLocks(String serviceId) {
+        return lockRepository.deleteByOwner(serviceId);
+    }
+
     // TODO we need to remove all locks of an instance when it leaves
 
-    private boolean lock(String category, String id, Duration timeout, Duration expiry) throws LockException {
+    private boolean lock(String category, String id, Duration timeout) throws LockException {
         log.debug("Locking '{}'.'{}'", category,  id);
-        // TODO we may want to add a unique generated tx ID
         long deadline = System.currentTimeMillis() + timeout.toMillis();
         do {
             Optional<Lock> existing = lockRepository.findById(category, id);
             if (existing.isEmpty()) {
                 // we can try to lock!
-                Lock newLock = new Lock(category, id, ServerInstance.INSTANCE_ID, LocalDateTime.now().plus(expiry));
-                if (lockRepository.create(newLock)) {
-                    return true;
-                } else {
-                    log.debug("Cannot create the lock, it may have been created after we check for its existence and before we create it");
-                }
-            } else if (LocalDateTime.now().isAfter(existing.get().getExpiry())) { // check that the lock is not expired
-                log.debug("The lock is expired, we take it over");
-                // remove the existing lock and try to lock
-                lockRepository.delete(existing.get());
-                Lock newLock = new Lock(category, id, ServerInstance.INSTANCE_ID, LocalDateTime.now().plus(expiry));
+                Lock newLock = new Lock(category, id, ServerInstance.INSTANCE_ID, LocalDateTime.now());
                 if (lockRepository.create(newLock)) {
                     return true;
                 } else {
@@ -159,11 +153,6 @@ public class LockService {
         if (!existing.get().getOwner().equals(ServerInstance.INSTANCE_ID)) {
             log.warn("Try to unlock a lock we no longer own '{}'.'{}', ignoring it", category, id);
             return;
-        }
-
-        if (existing.get().getExpiry().isAfter(LocalDateTime.now())) {
-            // we still need to remove the lock if expired but not taken over as otherwise it would stay locked forever
-            log.warn("Unlocking an expired lock '{}'.'{}', this may cause unexpected behaviors", category, id);
         }
 
         lockRepository.deleteById(category, id);

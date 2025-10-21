@@ -59,18 +59,24 @@ public class AbstractJdbcLockRepository extends AbstractJdbcRepository implement
     }
 
     @Override
-    public void delete(Lock existing) {
-        deleteById(existing.getCategory(), existing.getId());
-    }
-
-    @Override
     public void deleteById(String category, String id) {
         this.jdbcRepository.getDslContextWrapper()
-            .transaction(configuration -> {
+            .transaction(configuration ->
                 DSL.using(configuration)
                     .delete(this.jdbcRepository.getTable())
                     .where(field("key").eq(IdUtils.fromParts(category, id)))
-                    .execute();
-            });
+                    .execute()
+            );
+    }
+
+    @Override
+    public int deleteByOwner(String owner) {
+        return this.jdbcRepository.getDslContextWrapper()
+            .transactionResult(configuration ->
+                DSL.using(configuration)
+                    .delete(this.jdbcRepository.getTable())
+                    .where(field("owner").eq(owner))
+                    .execute()
+            );
     }
 }
